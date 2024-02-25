@@ -396,7 +396,9 @@ def cargar_datos(file_path):
     df=pd.read_excel(file_path, skiprows = 10)
     df=df.rename(columns={"DeviceName": "Device",
                           "TripDetailStartDateTime": "Start Date",
-                          "TripDetailDrivingDuraion":"Driving Duration"})
+                          "TripDetailDrivingDuraion":"Driving Duration",
+                          "TripDetailMaximumSpeed":"Maximum Speed",
+                             "TripDetailStopDateTime":"Stop Date"})
     return df
 
 def main():
