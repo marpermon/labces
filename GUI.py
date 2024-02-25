@@ -390,13 +390,13 @@ class AnalizadorDatosApp(QWidget):
         # Change the state of all vehicle checkboxes
         for checkbox in self.vehicle_checkboxes:
             checkbox.setChecked(state == Qt.Checked)
-            
+        
 
 def cargar_datos(file_path):
-    df = pd.read_excel(file_path, sheet_name='Report', skiprows=range(0, 11))
-    row_0 = df.iloc[0].tolist()
-    df.columns = row_0
-    df = df.drop(df.index[0])
+    df=pd.read_excel(file_path, skiprows = 10)
+    df=df.rename(columns={"DeviceName": "Device",
+                          "TripDetailStartDateTime": "Start Date",
+                          "TripDetailDrivingDuraion":"Driving Duration"})
     return df
 
 def main():
