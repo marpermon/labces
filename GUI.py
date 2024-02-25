@@ -4,6 +4,14 @@ from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 import pandas as pd
 from functools import partial
+import geopandas as gpd
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT
+from shapely.geometry import Point
+from string import capwords 
+from mapclassify import FisherJenks
+from prettytable import PrettyTable
+import warnings 
 
 class AnalizadorDatosApp(QWidget):
     def __init__(self):
@@ -41,8 +49,7 @@ class AnalizadorDatosApp(QWidget):
         btn_velocidad = self.create_button('Velocidad (Media y Máxima)', self.velocidad_media_maxima)
         btn_excesos = self.create_button('Lista de Excesos de Velocidad', self.lista_excesos_velocidad)
         btn_espera = self.create_button('Tiempo de Espera Promedio', self.lista_excesos_velocidad)
-        btn_destinos = self.create_button('Destinos más frecuentes', self.lista_excesos_velocidad)
-        
+        btn_destinos = self.create_button('Destinos mas frecuentes', self.ubicaciones)
 
 
         grid_layout = QGridLayout()
@@ -305,7 +312,74 @@ class AnalizadorDatosApp(QWidget):
         filtered_data.columns = ['Vehículo', 'Inicio', 'Final', 'Velocidad máxima']
 
         return filtered_data
+        
+    def ubicaciones(self,df):
+        GeoJson='Distritos_de_Costa_Rica.geojson'
+        #abrimos el GEojson y creamos un dataframe con los distritos
+        CR=gpd.read_file(GeoJson)
+        CR=CR.drop(['OBJECTID', 'COD_PROV', 'COD_CANT', 'COD_DIST', 'CODIGO'],axis=1)
+        CR=CR.drop(678)# #La fila 678 no tiene nada, debe ser un error del archivo
+        CR=CR.reset_index(drop=True)
+        #=CR.drop(columns=["index"])#le arreglamos el indice despues de usar drop
 
+        points=df.apply(lambda fila: Point(fila.TripDetailLongitude, fila.TripDetailLatitude),axis=1)
+
+        #checamos en qué distrito se hizo cada viaje
+        trips_df = gpd.GeoDataFrame(geometry=points,crs=4326)
+
+        CANTIDAD_DE_VIAJES = []
+        for dist in CR['geometry']:
+            trip = None
+            trip = trips_df[trips_df.geometry.within(dist)]
+            CANTIDAD_DE_VIAJES.append(len(trip))
+            
+        CR['CANTIDAD_DE_VIAJES']=CANTIDAD_DE_VIAJES
+        niveles=None
+        if len(CR['CANTIDAD_DE_VIAJES'].unique())>=5:
+            niveles=5
+        else:
+            niveles=len(CR['CANTIDAD_DE_VIAJES'].unique())
+
+        sch=FisherJenks(CR['CANTIDAD_DE_VIAJES'],k=niveles)
+        #ordenamospor niveles
+        limites=sch.bins.tolist()#limites de los niveles
+
+        CR_ordenado=CR.sort_values(by='CANTIDAD_DE_VIAJES',ascending=False)
+        CR_ordenado.reset_index(drop=True, inplace=True)
+        if len(limites)>=4:#por si los datos no variaran tanto
+            CR_ordenado=CR_ordenado[CR_ordenado['CANTIDAD_DE_VIAJES']>limites[-4]]
+        #imprimimos los 3 primeros niveles de ordenamiento
+        CR_ordenado.index += 1
+        CR_ordenado.drop(['ID', 'geometry'],axis=1, inplace=True)
+        CR_ordenado.reset_index(inplace=True)
+        CR_ordenado=CR_ordenado.rename(columns={"index": "Puesto",
+                              "NOM_PROV": "Provincia",
+                              "NOM_CANT":"Canton",
+                                 "NOM_DIST":"Distrito",
+                                 "CANTIDAD_DE_VIAJES":"Cantidad de viajes"})
+                
+    ####### para hacer la imagen
+        fig, axis = plt.subplots()
+        CR.plot(cmap='Accent',edgecolor='black',linewidth=0.35,
+                      column='CANTIDAD_DE_VIAJES',scheme='FisherJenks',
+                      k=niveles,legend=True, ax=axis,
+                      legend_kwds={"loc": "lower left","interval": True})
+        
+        axis.set_axis_off()
+        
+        plt.ylim(7.7, 11.5)
+        plt.xlim(-86, -82.5)
+        line="Destino más visitado:\n{}, {}, {}".format(capwords(CR_ordenado.at[0,'Distrito']),
+                                                        capwords(CR_ordenado.at[0,'Canton']),
+                                                        capwords(CR_ordenado.at[0,'Provincia']))
+        bbox = dict(boxstyle ="round", fc ="1",ec="0.7") 
+        plt.annotate(line, xy =(-83,11),xytext =(-86,11.5),
+                      color='black',fontsize = 10, bbox=bbox)
+        plt.show()
+        # canvas=FigureCanvasQTAgg(fig)
+        # layout.addWidget(canvas)
+        
+        return CR_ordenado
 
     def crear_tabla_resultados(self, result_data):
         table_widget = QTableWidget(self)
